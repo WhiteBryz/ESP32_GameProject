@@ -1,0 +1,388 @@
+{
+    "version": 1,
+    "author": "CASTELLANOS BERJAN ESLI",
+    "editor": "wokwi",
+    "parts": [
+        {
+            "type": "wokwi-esp32-devkit-v1",
+            "id": "esp",
+            "top": -110.5,
+            "left": -264.2,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-lcd1602",
+            "id": "lcd1",
+            "top": -80,
+            "left": -100,
+            "attrs": {
+                "pins": "i2c"
+            }
+        },
+        {
+            "type": "wokwi-text",
+            "id": "led1",
+            "top": 86.4,
+            "left": -96,
+            "attrs": {
+                "text": "El brillo de la pantalla puede modularse \n con el potenciómetro de la parte trasera."
+            }
+        },
+        {
+            "type": "wokwi-vcc",
+            "id": "vcc1",
+            "top": -133.64,
+            "left": -124.8,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-logo",
+            "id": "logo1",
+            "top": -268.8,
+            "left": -230.4,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-analog-joystick",
+            "id": "joystick1",
+            "top": -231,
+            "left": -417,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-pushbutton",
+            "id": "btn1",
+            "top": -269.4,
+            "left": -93,
+            "rotate": 90,
+            "attrs": {
+                "color": "black"
+            }
+        },
+        {
+            "type": "wokwi-resistor",
+            "id": "r1",
+            "top": -177.6,
+            "left": -77.35,
+            "rotate": 90,
+            "attrs": {
+                "value": "10000"
+            }
+        },
+        {
+            "type": "wokwi-vcc",
+            "id": "vcc2",
+            "top": -181.64,
+            "left": -28.8,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-gnd",
+            "id": "gnd1",
+            "top": -201.6,
+            "left": -87,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-pushbutton",
+            "id": "btn2",
+            "top": -269.4,
+            "left": 12.6,
+            "rotate": 90,
+            "attrs": {
+                "color": "red"
+            }
+        },
+        {
+            "type": "wokwi-resistor",
+            "id": "r2",
+            "top": -177.6,
+            "left": 28.25,
+            "rotate": 90,
+            "attrs": {
+                "value": "10000"
+            }
+        },
+        {
+            "type": "wokwi-vcc",
+            "id": "vcc3",
+            "top": -181.64,
+            "left": 76.8,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-gnd",
+            "id": "gnd2",
+            "top": -201.6,
+            "left": 18.6,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-microsd-card",
+            "id": "sd1",
+            "top": 105.83,
+            "left": -393.53,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-vcc",
+            "id": "vcc4",
+            "top": 183.16,
+            "left": -278.4,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-gnd",
+            "id": "gnd3",
+            "top": 67.2,
+            "left": -307.8,
+            "attrs": {}
+        },
+        {
+            "type": "wokwi-buzzer",
+            "id": "bz1",
+            "top": 223.2,
+            "left": -315,
+            "attrs": {
+                "volume": "0.1"
+            }
+        }
+    ],
+    "connections": [
+        [
+            "esp:TX0",
+            "$serialMonitor:RX",
+            "",
+            []
+        ],
+        [
+            "esp:RX0",
+            "$serialMonitor:TX",
+            "",
+            []
+        ],
+        [
+            "vcc1:VCC",
+            "lcd1:VCC",
+            "red",
+            [
+                "v0"
+            ]
+        ],
+        [
+            "lcd1:SDA",
+            "esp:D21",
+            "magenta",
+            [
+                "h-28.8",
+                "v-18.6"
+            ]
+        ],
+        [
+            "lcd1:SCL",
+            "esp:D22",
+            "cyan",
+            [
+                "h-38.4",
+                "v-57"
+            ]
+        ],
+        [
+            "lcd1:GND",
+            "esp:GND.1",
+            "black",
+            [
+                "h-9.6",
+                "v86.5"
+            ]
+        ],
+        [
+            "esp:VIN",
+            "joystick1:VCC",
+            "red",
+            [
+                "h0"
+            ]
+        ],
+        [
+            "esp:D13",
+            "joystick1:VERT",
+            "green",
+            [
+                "h0"
+            ]
+        ],
+        [
+            "esp:D14",
+            "joystick1:SEL",
+            "green",
+            [
+                "h0"
+            ]
+        ],
+        [
+            "esp:GND.1",
+            "joystick1:GND",
+            "black",
+            [
+                "h-173.1",
+                "v-134.5"
+            ]
+        ],
+        [
+            "r1:1",
+            "btn1:1.r",
+            "red",
+            [
+                "h-2.7",
+                "v-12.6"
+            ]
+        ],
+        [
+            "r1:2",
+            "vcc2:VCC",
+            "red",
+            [
+                "h0"
+            ]
+        ],
+        [
+            "btn1:2.r",
+            "gnd1:GND",
+            "black",
+            [
+                "v0"
+            ]
+        ],
+        [
+            "btn1:1.l",
+            "esp:D35",
+            "white",
+            [
+                "v-26",
+                "h-237",
+                "v259.2"
+            ]
+        ],
+        [
+            "r2:1",
+            "btn2:1.r",
+            "red",
+            [
+                "h-2.7",
+                "v-12.6"
+            ]
+        ],
+        [
+            "r2:2",
+            "vcc3:VCC",
+            "red",
+            [
+                "h0"
+            ]
+        ],
+        [
+            "btn2:2.r",
+            "gnd2:GND",
+            "black",
+            [
+                "v0"
+            ]
+        ],
+        [
+            "btn2:1.l",
+            "esp:D34",
+            "purple",
+            [
+                "v-38.4",
+                "h-355.2",
+                "v259.2"
+            ]
+        ],
+        [
+            "sd1:CS",
+            "esp:D5",
+            "green",
+            [
+                "h172.8",
+                "v-191.94"
+            ]
+        ],
+        [
+            "sd1:VCC",
+            "vcc4:VCC",
+            "red",
+            [
+                "h0"
+            ]
+        ],
+        [
+            "sd1:GND",
+            "gnd3:GND",
+            "black",
+            [
+                "h19.2",
+                "v-38.29",
+                "h-134.4"
+            ]
+        ],
+        [
+            "sd1:SCK",
+            "esp:D18",
+            "orange",
+            [
+                "h163.2",
+                "v-172.81"
+            ]
+        ],
+        [
+            "sd1:DO",
+            "esp:D19",
+            "gray",
+            [
+                "h182.4",
+                "v-124.69"
+            ]
+        ],
+        [
+            "sd1:DI",
+            "esp:D23",
+            "blue",
+            [
+                "h192",
+                "v-249.69"
+            ]
+        ],
+        [
+            "esp:D4",
+            "bz1:2",
+            "#8f4814",
+            [
+                "h47.7",
+                "v297.7",
+                "h-9.6"
+            ]
+        ],
+        [
+            "bz1:1",
+            "gnd3:GND",
+            "black",
+            [
+                "v28.8",
+                "h57.6",
+                "v-230.4",
+                "h-48",
+                "v-38.4"
+            ]
+        ],
+        [
+            "joystick1:HORZ",
+            "esp:D27",
+            "green",
+            [
+                "v115.2"
+            ]
+        ]
+    ],
+    "dependencies": {}
+}
