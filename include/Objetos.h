@@ -75,7 +75,7 @@ int Objeto::GetY(void)
 // Métodos Diamante
 void Diamante::RehubicarObjeto(void)
 {
-    x = random(15); // Suponiendo que estás usando una pantalla de 16 columnas
+    x = random(13); // Suponiendo que estás usando una pantalla de 16 columnas
     y = random(2);  // Suponiendo que hay 2 filas
 }
 
@@ -95,8 +95,8 @@ void Personaje::Left(void)
 
 void Personaje::Right(void)
 {
-    if (x < 15)
-    { // Suponiendo que el límite es 15
+    if (x < 13)
+    { // Suponiendo que el límite es 13
         x += 1;
     }
 }

@@ -6,14 +6,14 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
-#include "Objects.h"
+#include "Objetos.h"
 #include "DualCore.h"
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <ArduinoJson.h>
 #include <SD.h>
 // #include <Audio.h>
-// #include <FS.h>
+#include <FS.h>
 
 // Claves de los núcleos
 #define NUCLEO_PRIMARIO 0X01
@@ -32,7 +32,14 @@
 #define SPI_MISO 19
 #define SPI_MOSI 23
 
+// I2S Connections
+#define I2S_DOUT 15
+#define I2S_BCLK 26
+#define I2S_LRC 25
+
 File root; // Instancia de la clase para SD
+
+// Audio audio; // Instancia de la clase para Audio
 
 // Pin del buzzer
 #define BUZZER_PIN 4
@@ -60,8 +67,8 @@ Personaje personaje(0, 0);
 Diamante objetivo(random(16), random(2));
 
 // Banderas globales (No usadas aún)
-bool isBtnExitActivated = false;
-bool isBtnEnterActivated = false;
+bool isPauseActivated = false;
+bool isGameInProgress = false;
 bool isTheLevelFinishedWithSuccess = false;
 bool isAudioStopped = false;
 
@@ -71,6 +78,7 @@ unsigned long inicioMilis = 0;
 /* -- INSTANCIAS FREE-RTOS -- */
 TaskHandle_t MusicTask_t;
 TaskHandle_t GameLogicTask_t;
+TaskHandle_t GamePauseTask_t;
 
 // Enumeración para los estados de la música
 enum MusicState
@@ -78,17 +86,18 @@ enum MusicState
     MUSIC_INTRO,
     MUSIC_MENU,
     MUSIC_GAME,
-    MUSIC_PAUSE,
-    MUSIC_ELEVATOR
+    MUSIC_ELEVATOR,
+    MUSIC_PAUSE
 };
 
 // Enumeración para los estados del juego
 enum GameState
 {
     STATE_INTRO,
+    STATE_MENU,
     STATE_GAME,
     STATE_SCORES,
-    STATE_MENU,
+    STATE_PAUSE
 };
 
 // Cola para comunicación entre núcleos
@@ -111,7 +120,7 @@ void ReadMaxScores(void);                   // Leer scores máximos
 void IntroGame(void);                       // Ejecutar el intro
 void PrintDirectory(File dir, int numTabs); // Imprimir directorio
 void ActivarBuzzer(void);                   // Activar PinBuzzer
-void ActivarMenuPrincipal(void);
+void MostrarMenuPausa(void);
 void MostrarMenuPrincipal(void);
 bool nivel(int contador, int puntos);
 void EscribirNombre(void);
@@ -128,6 +137,7 @@ public:
 
 private:
     static void MusicTask(void *pvParameters);
+    static void PauseTask(void *pvParameters);
     static void GameLogicTask(void *pvParameters);
 };
 
@@ -173,6 +183,15 @@ void DualCoreESP32 ::ConfigCores(void)
     PrintDirectory(root, 0);
     Serial.println("");
 
+    // Initialize SPI bus for microSD Card
+    SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+
+    // Setup I2S
+    // audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+
+    // Set Volume
+    // audio.setVolume(21);
+
     /*~ Inicializar la pantalla LCD ~*/
     lcd.init();
     lcd.backlight();
@@ -201,32 +220,40 @@ void DualCoreESP32 ::ConfigCores(void)
         1,
         &GameLogicTask_t,
         NUCLEO_PRIMARIO);
+
+    xTaskCreatePinnedToCore(
+        this->PauseTask,
+        "PausaDelJuego",
+        1000,
+        NULL,
+        1,
+        &GamePauseTask_t,
+        NUCLEO_SECUNDARIO);
 }
 
 // --- TASKS DE LOS CORES --
 // Tarea para cambiar entre música
+void DualCoreESP32 ::PauseTask(void *pvParameters)
+{
+    while (true)
+    {
+        if (!digitalRead(BTN_EXIT) && isGameInProgress == true)
+        {
+            isPauseActivated = true;
+            ChangeGameState(STATE_PAUSE);
+        }
+        vTaskDelay(1 / portTICK_PERIOD_MS);
+    }
+}
 void DualCoreESP32 ::MusicTask(void *pvParameters)
 {
     MusicState newState;
 
-    // Setup I2S
-    // audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
-
-    // Set Volume
-    // audio.setVolume(50);
-
-    // ledcSetup(0, 5000, 8);  // Configura el canal 0 de LEDC a 5 kHz con una resolución de 8 bits
-    // ledcAttachPin(I2S_DOUT, 0);  // Asocia el pin de salida I2S al canal LEDC 0
-
-    while (1)
+    while (true)
     {
         if (xQueueReceive(musicQueue, &newState, 0) == pdTRUE)
         {
             currentMusicState = newState;
-
-            // Detener la música actual
-            // audio.stopSong();
-            // vTaskDelay(10 / portTICK_PERIOD_MS);
 
             switch (currentMusicState)
             {
@@ -263,7 +290,6 @@ void DualCoreESP32 ::MusicTask(void *pvParameters)
                 // }
                 // audio.connecttoFS(SD,"/elevator.mp3");
                 break;
-
             default:
                 break;
             }
@@ -303,7 +329,9 @@ void DualCoreESP32 ::GameLogicTask(void *pvParameters)
                 ChangeMusic(MUSIC_ELEVATOR);
                 ReadMaxScores();
                 break;
-
+            case STATE_PAUSE:
+                ChangeMusic(MUSIC_PAUSE);
+                MostrarMenuPausa();
             default:
                 break;
             }
@@ -570,6 +598,51 @@ void MostrarMenuPrincipal(void)
     }
 }
 
+void MostrarMenuPausa(void)
+{
+    int optionToSelect = 0;
+    lcd.clear();
+    lcd.setCursor(1, 0);
+    lcd.print("Reanudar");
+    lcd.setCursor(1, 1);
+    lcd.print("Reiniciar");
+
+    while (digitalRead(BTN_ENTER))
+    {
+        valueY = analogRead(VRY_PIN); // Leer eje Y del joystick
+        // Cambiar selección del menú
+        // Ajustar para mover hacia abajo
+        if (valueY < 1000)
+        {
+            lcd.setCursor(0, 0);
+            lcd.write(0x20);
+            optionToSelect = 1;
+            ActivarBuzzer();
+        }
+        if (valueY == MAX_VERT)
+        {
+            lcd.setCursor(0, 1);
+            lcd.write(0x20);
+            optionToSelect = 0;
+            ActivarBuzzer();
+        }
+        lcd.setCursor(0, optionToSelect);
+        lcd.write(0x7E); // Flecha (→)
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+
+    // Serial.println("Sale del programa");
+    switch (optionToSelect)
+    {
+    case 0: // Se reinicia el juego
+        isPauseActivated = false;
+        ChangeGameState(STATE_GAME);
+    case 1: // Se envía menú principal
+        isGameInProgress = false;
+        ChangeGameState(STATE_MENU);
+    }
+}
+
 void mostrarMensaje(const char *linea1, const char *linea2)
 {
     lcd.clear();
@@ -624,13 +697,17 @@ bool nivel(int contador, int puntos)
             lcd.write(0);
             lcd.setCursor(objetivo.GetX(), objetivo.GetY());
             lcd.write(1);
-
             // Verificar colisión
             if (objetivo.Colision(personaje.GetX(), personaje.GetY(), objetivo.GetX(), objetivo.GetY()))
             {
+
                 personaje.IncrementarPuntaje();
                 objetivo.RehubicarObjeto();
             }
+            lcd.setCursor(14, 0);
+            lcd.print(tiempoRestante);
+            lcd.setCursor(14, 1);
+            lcd.print(personaje.ImprimirPuntaje());
 
             return false; // El nivel sigue activo
         }
@@ -670,6 +747,9 @@ void EvaluarNivelFinal(int puntajeFinal)
         lcd.print("Fin del juego");
         Serial.println("Fin del juego");
     }
+
+    // Cambiamos estado del juego a terminado
+    isGameInProgress = false;
 }
 
 void JuegoCompleto()
@@ -679,7 +759,8 @@ void JuegoCompleto()
     const int puntosRequeridos[NIVELES] = {5, 10, 20};
 
     // Reiniciamos valores cada vez que se inicie el juego
-    personaje.ReiniciarValores();
+    if (!isPauseActivated)
+        personaje.ReiniciarValores();
 
     // char* nombreElegido = nullptr;
 
@@ -701,8 +782,10 @@ void JuegoCompleto()
         inicioMilis = millis(); // Reiniciar el tiempo al inicio de cada nivel
 
         bool nivelCompletado = false;
+        isGameInProgress = true;
         while (!nivelCompletado)
         {
+            Serial.println(isPauseActivated);
             nivelCompletado = nivel(tiempos[i], puntosRequeridos[i]);
             vTaskDelay(10 / portTICK_PERIOD_MS); // Reducir el delay para mayor responsividad
         }
