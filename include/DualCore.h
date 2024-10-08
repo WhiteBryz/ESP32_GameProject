@@ -238,10 +238,7 @@ void DualCoreESP32 ::PauseTask(void *pvParameters)
     while (true)
     {
         if (!digitalRead(BTN_EXIT) && isGameInProgress == true)
-        {
             isPauseActivated = true;
-            ChangeGameState(STATE_PAUSE);
-        }
         vTaskDelay(1 / portTICK_PERIOD_MS);
     }
 }
@@ -785,9 +782,16 @@ void JuegoCompleto()
         isGameInProgress = true;
         while (!nivelCompletado)
         {
-            Serial.println(isPauseActivated);
-            nivelCompletado = nivel(tiempos[i], puntosRequeridos[i]);
-            vTaskDelay(10 / portTICK_PERIOD_MS); // Reducir el delay para mayor responsividad
+            if (!isPauseActivated)
+            {
+                Serial.println(isPauseActivated);
+                nivelCompletado = nivel(tiempos[i], puntosRequeridos[i]);
+                vTaskDelay(10 / portTICK_PERIOD_MS); // Reducir el delay para mayor responsividad
+            }
+            else
+            {
+                break;
+            }
         }
 
         // Si no alcanzó los puntos requeridos, terminar el juego
@@ -797,9 +801,16 @@ void JuegoCompleto()
         }
     }
 
-    EvaluarNivelFinal(puntosRequeridos[NIVELES - 1]);
-    vTaskDelay(2000 / portTICK_PERIOD_MS); // Dar tiempo para leer el mensaje final
-    ChangeGameState(STATE_MENU);
+    if (isPauseActivated)
+    {
+        ChangeGameState(STATE_PAUSE);
+    }
+    else
+    {
+        EvaluarNivelFinal(puntosRequeridos[NIVELES - 1]);
+        vTaskDelay(2000 / portTICK_PERIOD_MS); // Dar tiempo para leer el mensaje final
+        ChangeGameState(STATE_MENU);
+    }
 }
 
 bool ElegirNombre(void)
