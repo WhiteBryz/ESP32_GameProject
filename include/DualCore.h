@@ -300,6 +300,7 @@ void DualCoreESP32 ::MusicTask(void *pvParameters)
                 break;
             }
         }
+        // audio.loop();
         vTaskDelay(1 / portTICK_PERIOD_MS);
     }
 }
@@ -688,11 +689,11 @@ bool nivel(int duracionEnSegundos, int puntosRequeridos, int puntajeEntrante)
 
             if (valueX == MAX_HORI)
             {
-                personaje.Left();
+                personaje.Right();
             }
             if (valueX < 100)
             {
-                personaje.Right();
+                personaje.Left();
             }
             if (valueY == MAX_VERT)
             {
@@ -877,17 +878,17 @@ char *ElegirNombre(void)
         char abc[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'};
 
         // Mover posicion:
-        if (valueX < 100)
+        if (valueX == MAX_HORI)
         {
             posChar = (posChar < 2) ? posChar + 1 : 2;
         } // Derecha
-        if (valueX == MAX_HORI)
+        if (valueX < 1000)
         {
             posChar = (posChar > 0) ? posChar - 1 : 0;
         } // Izquierda
 
         // mover letras:
-        if (valueY < 100)
+        if (valueY < 1000)
         {
             posLetra = (posLetra < 25) ? posLetra + 1 : 0;
         } // Abajo
