@@ -116,24 +116,22 @@ volatile GameState currentGameState = STATE_INTRO;
 int posChar = 0;                     // posicion del caracter
 int posLetra = 0;                    // posicion de la letra
 char nom[4] = {'A', 'A', 'A', '\0'}; // cadena con el nombre del jugador
+int PuntajeTop = 0;
 
 // Encabezados de funciones
-void ChangeMusic(MusicState newState);      // Cambiar música
-void ChangeGameState(GameState newState);   // Cambiar de estados del juego
-void ReadMaxScores(void);                   // Leer scores máximos
-void IntroGame(void);                       // Ejecutar el intro
-void PrintDirectory(File dir, int numTabs); // Imprimir directorio
-void ActivarBuzzer(void);                   // Activar PinBuzzer
-void MostrarMenuPausa(void);
-void MostrarMenuPrincipal(void);
+void ChangeMusic(MusicState newState);                            // Cambiar música
+void ChangeGameState(GameState newState);                         // Cambiar de estados del juego
+void ReadMaxScores(void);                                         // Leer scores máximos
+void IntroGame(void);                                             // Ejecutar el intro
+void PrintDirectory(File dir, int numTabs);                       // Imprimir directorio
+void ActivarBuzzer(unsigned int frecuency, unsigned long millis); // Activar PinBuzzer
+void MostrarMenuPausa(void);                                      // Menú de pausa
+void MostrarMenuPrincipal(void);                                  // Menú principal
 bool nivel(int contador, int puntosRequeridos, int puntajeEntrante);
-void EscribirNombre(void);
-void JuegoCompleto(void);
-void EvaluarFinal(void);
-bool ElegirNombre(void);
-bool esNuevoPuntajeMaximo(const JsonArray &bestScores, int puntajeObtenido);
-void actualizarPuntajes(JsonArray &bestScores, String nombreJugador, int puntajeObtenido);
-void evaluarPuntajeObtenido(int puntajeObtenido);
+void JuegoCompleto(void); // Lógica completa del juego
+void EvaluarNivelFinal(void);
+char *ElegirNombre(void);
+void GuardarScore(int Puntaje, char *Nombre);
 
 /*--- CLASE MAESTRA --- */
 
@@ -564,9 +562,9 @@ void PrintDirectory(File dir, int numTabs)
     }
 }
 
-void ActivarBuzzer(void)
+void ActivarBuzzer(unsigned int frecuency, unsigned long millis)
 {
-    tone(BUZZER_PIN, 2000, 50);
+    tone(BUZZER_PIN, frecuency, millis);
 }
 
 void MostrarMenuPrincipal(void)
@@ -588,14 +586,14 @@ void MostrarMenuPrincipal(void)
             lcd.setCursor(0, 0);
             lcd.write(0x20);
             optionToSelect = 1;
-            ActivarBuzzer();
+            ActivarBuzzer(2000, 50);
         }
         if (valueY == MAX_VERT)
         {
             lcd.setCursor(0, 1);
             lcd.write(0x20);
             optionToSelect = 0;
-            ActivarBuzzer();
+            ActivarBuzzer(2000, 50);
         }
         lcd.setCursor(0, optionToSelect);
         lcd.write(0x7E); // Flecha (→)
@@ -631,14 +629,14 @@ void MostrarMenuPausa(void)
             lcd.setCursor(0, 0);
             lcd.write(0x20);
             optionToSelect = 1;
-            ActivarBuzzer();
+            ActivarBuzzer(2000, 50);
         }
         if (valueY == MAX_VERT)
         {
             lcd.setCursor(0, 1);
             lcd.write(0x20);
             optionToSelect = 0;
-            ActivarBuzzer();
+            ActivarBuzzer(2000, 50);
         }
         lcd.setCursor(0, optionToSelect);
         lcd.write(0x7E); // Flecha (→)
@@ -665,7 +663,7 @@ void mostrarMensaje(const char *linea1, const char *linea2)
     lcd.print(linea2);
 }
 
-bool nivel(int contador, int puntosRequeridos, int puntajeEntrante)
+bool nivel(int duracionEnSegundos, int puntosRequeridos, int puntajeEntrante)
 {
     static unsigned long lastUpdateTime = 0;
     const unsigned long UPDATE_INTERVAL = 100; // Actualizar cada 100ms
@@ -680,7 +678,7 @@ bool nivel(int contador, int puntosRequeridos, int puntajeEntrante)
         lcd.clear();
 
         // Calcular el tiempo restante
-        int tiempoRestante = contador - (currentMillis - inicioMilis) / 1000;
+        int tiempoRestante = duracionEnSegundos - (currentMillis - inicioMilis) / 1000;
 
         if (tiempoRestante >= 0)
         {
@@ -713,7 +711,7 @@ bool nivel(int contador, int puntosRequeridos, int puntajeEntrante)
             // Verificar colisión
             if (objetivo.Colision(personaje.GetX(), personaje.GetY(), objetivo.GetX(), objetivo.GetY()))
             {
-
+                ActivarBuzzer(1000, 10);
                 personaje.IncrementarPuntaje();
                 objetivo.RehubicarObjeto();
             }
@@ -744,6 +742,22 @@ bool nivel(int contador, int puntosRequeridos, int puntajeEntrante)
 
 void EvaluarNivelFinal(int puntajeFinal)
 {
+    File JsonFile = SD.open("/GameData.json");
+    if (!JsonFile)
+    {
+        Serial.println("Error opening Scores");
+        return;
+    }
+    // JSON Doc con tamaño predefinido
+    JsonDocument doc;
+    deserializeJson(doc, JsonFile);
+    JsonArray bestScores = doc["bestScores"].as<JsonArray>();
+    JsonFile.close(); // Cierra el archivo antes de entrar en el bucle
+    JsonObject score = bestScores[0];
+    PuntajeTop = bestScores[0]["score"]; // Puntaje Top del Json
+
+    char *nick = nullptr;
+
     if (personaje.ImprimirPuntaje() >= puntajeFinal)
     {
         lcd.clear();
@@ -751,7 +765,13 @@ void EvaluarNivelFinal(int puntajeFinal)
         lcd.print("Ganaste el juego!");
         Serial.println("Juego completado con éxito");
 
-        evaluarPuntajeObtenido(personaje.ImprimirPuntaje());
+        if (personaje.ImprimirPuntaje() >= PuntajeTop)
+        {
+            // mostrarMensaje("!Nuevo Puntaje!","Con "+ personaje.ImprimirPuntaje());
+            nick = ElegirNombre();
+            GuardarScore(personaje.ImprimirPuntaje(), nick);
+            Serial.println("Nuevo Score");
+        }
     }
     else
     {
@@ -770,8 +790,8 @@ void EvaluarNivelFinal(int puntajeFinal)
 void JuegoCompleto()
 {
     const int NIVELES = 3;
-    const int tiempos[NIVELES] = {10, 15, 20};
-    const int puntosRequeridos[NIVELES] = {5, 10, 20};
+    const int tiempos[NIVELES] = {10, 10, 10};
+    const int puntosRequeridos[NIVELES] = {1, 1, 1};
 
     // Reiniciamos valores cada vez que se inicie el juego
     if (!isPauseActivated)
@@ -847,158 +867,93 @@ void JuegoCompleto()
     }
 }
 
-bool ElegirNombre(void)
+char *ElegirNombre(void)
 {
-    valueX = analogRead(VRX_PIN);
-    valueY = analogRead(VRY_PIN);
-    Serial.println("Entro");
-    char abc[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'};
-
-    // Mover posicion:
-    if (valueX < 100)
+    while (digitalRead(BTN_ENTER))
     {
-        posChar = (posChar < 2) ? posChar + 1 : 2;
-    } // Derecha
-    if (valueX == MAX_HORI)
-    {
-        posChar = (posChar > 0) ? posChar - 1 : 0;
-    } // Izquierda
-
-    // mover letras:
-    if (valueY < 100)
-    {
-        posLetra = (posLetra < 25) ? posLetra + 1 : 0;
-    } // Abajo
-    if (valueY == MAX_VERT)
-    {
-        posLetra = (posLetra > 0) ? posLetra - 1 : 25;
-    } // Arriba
-    // Asignar la letra seleccionada a la posición correspondiente
-    nom[posChar] = abc[posLetra];
-
-    lcd.setCursor(0, 0);
-    lcd.print("Nombre:");
-
-    // Mostrar las tres letras del nombre
-    for (int j = 0; j < 3; j++)
-    {
-        lcd.setCursor(8 + (j * 2), 0);
-        lcd.print(nom[j]);
-    }
-
-    // Mover cursor a la posición actual y activar parpadeo
-    lcd.setCursor(8 + (posChar * 2), 0);
-    // lcd.print(nom[posChar]);
-    // lcd.blink();
-
-    if (!digitalRead(BTN_ENTER))
-    {
-        Serial.println(digitalRead(BTN_ENTER));
+        valueX = analogRead(VRX_PIN);
+        valueY = analogRead(VRY_PIN);
         Serial.println("Entro");
-        return false;
+        char abc[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'};
+
+        // Mover posicion:
+        if (valueX < 100)
+        {
+            posChar = (posChar < 2) ? posChar + 1 : 2;
+        } // Derecha
+        if (valueX == MAX_HORI)
+        {
+            posChar = (posChar > 0) ? posChar - 1 : 0;
+        } // Izquierda
+
+        // mover letras:
+        if (valueY < 100)
+        {
+            posLetra = (posLetra < 25) ? posLetra + 1 : 0;
+        } // Abajo
+        if (valueY == MAX_VERT)
+        {
+            posLetra = (posLetra > 0) ? posLetra - 1 : 25;
+        } // Arriba
+        // Asignar la letra seleccionada a la posición correspondiente
+        nom[posChar] = abc[posLetra];
+
+        lcd.setCursor(0, 1);
+        lcd.print("Nickname: ");
+        // Serial.println(PuntajeTop);
+        //  Mover cursor a la posición actual y activar parpadeo
+        lcd.setCursor(10 + (posChar * 2), 1);
+        lcd.print(nom[posChar]);
+        lcd.blink();
+
+        // Mostrar las tres letras del nombre
+        for (int j = 0; j < 3; j++)
+        {
+            lcd.setCursor(10 + (j * 2), 1);
+            lcd.print(nom[j]);
+        }
     }
+    char *nombre = nom;
+    return nombre;
 }
 
-// Evalua el puntaje obtenido de la partida y si es un nuevo máximo lo registramos
-void evaluarPuntajeObtenido(int puntajeObtenido)
+void GuardarScore(int Puntaje, char *Nombre)
 {
+    bool Iterador = true;
+    int Contador = 3;
     File JsonFile = SD.open("/GameData.json");
     if (!JsonFile)
     {
-        Serial.println(F("Error opening GameData.json"));
+        Serial.println("Error opening Scores");
         return;
     }
-
+    // JSON Doc con tamaño predefinido
     JsonDocument doc;
     deserializeJson(doc, JsonFile);
     JsonArray bestScores = doc["bestScores"].as<JsonArray>();
-
-    if (esNuevoPuntajeMaximo(bestScores, puntajeObtenido))
+    JsonFile.close(); // Cierra el archivo antes de entrar en el bucle
+    while (Iterador)
     {
-        String nombreJugador = "DAF";
-        actualizarPuntajes(bestScores, nombreJugador, puntajeObtenido);
-    }
-    else
-    {
-        Serial.println("No fue puntaje máximo");
-    }
-}
-
-// Evalúa si el puntaje obtenido es un nuevo máximo
-bool esNuevoPuntajeMaximo(const JsonArray &bestScores, int puntajeObtenido)
-{
-    if (bestScores.isNull() || bestScores.size() == 0)
-    {
-        Serial.println("Primer nuevo puntaje máximo.");
-        return true;
+        bestScores[Contador]["score"] = bestScores[Contador - 1]["score"];
+        bestScores[Contador]["name"] = bestScores[Contador - 1]["name"];
+        Contador--;
+        if (Contador < 1)
+            Iterador = false;
     }
 
-    // Obtenemos puntaje maximo
-    int scoreValue = bestScores[0]["score"];
+    bestScores[0]["score"] = Puntaje;
+    bestScores[0]["name"] = Nombre;
 
-    return puntajeObtenido >= scoreValue;
-}
-
-// Desplazar puntajes máximos viejos y agregar el nuevo puntaje máximo
-void actualizarPuntajes(JsonArray &bestScores, String nombreJugador, int puntajeObtenido)
-{
-
-    // Ejemplo de cómo podrías usar el array modificable
-    if (puntajeObtenido > bestScores[0]["score"])
+    // Guardar los cambios en el archivo JSON
+    JsonFile = SD.open("/GameData.json", FILE_WRITE);
+    if (!JsonFile)
     {
-        // Desplazar todos los puntajes una posición
-        for (int i = bestScores.size() - 1; i > 0; i--)
-        {
-            bestScores[i]["score"] = bestScores[i - 1]["score"];
-            bestScores[i]["name"] = bestScores[i - 1]["name"];
-        }
-        // Insertar el nuevo puntaje máximo
-        bestScores[0]["score"] = puntajeObtenido;
-        bestScores[0]["name"] = nombreJugador;
-    }
-    else
-    {
+        Serial.println("Error opening Scores for writing");
         return;
     }
-
-    // Eliminar el archivo existente
-    if (SD.exists("/GameData.json"))
-        SD.remove("/GameData.json");
-
-    // Ahora escribimos el JSON actualizado al archivo
-    File jsonFile = SD.open("/GameData.json", FILE_WRITE);
-    if (!jsonFile)
-    {
-        Serial.println(F("Error al abrir el archivo para escritura"));
-        return;
-    }
-
-    // Serializar documento nuevo
-    JsonDocument doc;
-    // Versión
-    doc["version"] = 1.0;
-
-    // Authors
-    JsonObject authors = doc.createNestedObject("authors");
-    JsonArray authorNames = authors.createNestedArray("names");
-    authorNames.add("Flores Castro David Alonso");
-    authorNames.add("García Bravo Joél Adrían");
-    authorNames.add("Martínez Navarro Víctor");
-    authorNames.add("Puente Ruiz Eric Daniel");
-
-    // Editor
-    doc["editor"] = "wokwi";
-    doc["gameName"] = "Catch the Diamonds";
-    doc["bestScores"] = bestScores;
-
-    if (serializeJson(doc, jsonFile) == 0)
-    {
-        Serial.println(F("Error al escribir en el archivo"));
-        jsonFile.close();
-        return;
-    }
-
-    jsonFile.close();
+    // Sobreescribir el archivo con los nuevos datos
+    serializeJson(doc, JsonFile);
+    JsonFile.close();
 }
 
 #endif
