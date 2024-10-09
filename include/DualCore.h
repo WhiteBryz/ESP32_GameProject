@@ -52,6 +52,10 @@ File root; // Instancia de la clase para SD
 int valueX = 0; // to store the X-axis value
 int valueY = 0; // to store the Y-axis value
 
+// Variables globales para almacenar el puntaje y nivel del juego actual (Funciona para almacenar valores cuando se pausa el juego).
+int checkPointPuntaje = 0;
+int checkPointNivel = 0;
+
 /* --- CARACTERES PERSONALIZADOS --- */
 // Personaje
 byte characterPersonaje[] = {B01110, B01010, B01110, B11111, B00100, B00100, B01010, B10001};
@@ -64,7 +68,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // Creación de objetos del Personaje y Diamante
 Personaje personaje(0, 0);
-Diamante objetivo(random(16), random(2));
+Diamante objetivo(random(13), random(2));
 
 // Banderas globales (No usadas aún)
 bool isPauseActivated = false;
@@ -75,10 +79,14 @@ bool isAudioStopped = false;
 // Variable para registrar el contador de tiempo
 unsigned long inicioMilis = 0;
 
-/* -- INSTANCIAS FREE-RTOS -- */
+/* -- INSTANCIAS FREE-RTOS para TASKs -- */
 TaskHandle_t MusicTask_t;
 TaskHandle_t GameLogicTask_t;
 TaskHandle_t GamePauseTask_t;
+
+/* -- INSTANCIAS FREE-RTOS para QUEUES para comunicación entre núcleos */
+QueueHandle_t musicQueue;
+QueueHandle_t gameQueue;
 
 // Enumeración para los estados de la música
 enum MusicState
@@ -100,11 +108,7 @@ enum GameState
     STATE_PAUSE
 };
 
-// Cola para comunicación entre núcleos
-QueueHandle_t musicQueue;
-QueueHandle_t gameQueue;
-
-// Variables globales para el estado actual de la música y del juego
+// Variables globales para el estado inicial de la música y del juego
 volatile MusicState currentMusicState = MUSIC_INTRO;
 volatile GameState currentGameState = STATE_INTRO;
 
@@ -122,7 +126,7 @@ void PrintDirectory(File dir, int numTabs); // Imprimir directorio
 void ActivarBuzzer(void);                   // Activar PinBuzzer
 void MostrarMenuPausa(void);
 void MostrarMenuPrincipal(void);
-bool nivel(int contador, int puntos);
+bool nivel(int contador, int puntosRequeridos, int puntajeEntrante);
 void EscribirNombre(void);
 void JuegoCompleto(void);
 void EvaluarFinal(void);
@@ -141,18 +145,20 @@ private:
     static void GameLogicTask(void *pvParameters);
 };
 
-/* --- Funciones de la Clase Maestra --- */
+/* --- Funciones de la Clase DualCoreESP32 --- */
 
+// Inicializar colas en el constructor
 DualCoreESP32::DualCoreESP32()
 {
-    // Inicializar la cola en el constructor
     musicQueue = xQueueCreate(1, sizeof(MusicState));
     gameQueue = xQueueCreate(1, sizeof(GameState));
 }
 
-// Creación de Tareas(2) Para el DualCore
+// Creación de Tareas(3) Para el DualCore
 void DualCoreESP32 ::ConfigCores(void)
 {
+    // ---> Empieza el setup de los pines, micro SD y Audio
+
     // Estados de pines
     pinMode(VRX_PIN, INPUT);          // Entrada para el eje X
     pinMode(VRY_PIN, INPUT);          // Entrada para el eje Y
@@ -167,18 +173,18 @@ void DualCoreESP32 ::ConfigCores(void)
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
 
     // --- INICIALIZACION DE MÓDULO SD ---
-    Serial.print("Initializing SD card... ");
+    Serial.print(F("Initializing SD card... "));
 
     if (!SD.begin(CS_PIN))
     {
-        Serial.println("Card initialization failed!");
+        Serial.println(F("Card initialization failed!"));
         while (true)
             ;
     }
 
-    Serial.println("Initialization done.");
+    Serial.println(F("Initialization done."));
 
-    Serial.println("Files in the card:");
+    Serial.println(F("Files in the card:"));
     root = SD.open("/");
     PrintDirectory(root, 0);
     Serial.println("");
@@ -203,6 +209,7 @@ void DualCoreESP32 ::ConfigCores(void)
     // Registrar tiempo
     inicioMilis = millis();
 
+    // Tarea para la música
     xTaskCreatePinnedToCore(
         this->MusicTask,
         "Musica",
@@ -212,6 +219,7 @@ void DualCoreESP32 ::ConfigCores(void)
         &MusicTask_t,
         NUCLEO_SECUNDARIO);
 
+    // Tarea para la lógica del juego
     xTaskCreatePinnedToCore(
         this->GameLogicTask,
         "LogicaJuego",
@@ -221,6 +229,7 @@ void DualCoreESP32 ::ConfigCores(void)
         &GameLogicTask_t,
         NUCLEO_PRIMARIO);
 
+    // Tarea para manejar únicamente la pausa del juego
     xTaskCreatePinnedToCore(
         this->PauseTask,
         "PausaDelJuego",
@@ -232,7 +241,8 @@ void DualCoreESP32 ::ConfigCores(void)
 }
 
 // --- TASKS DE LOS CORES --
-// Tarea para cambiar entre música
+
+// Tarea para manejar la pausa del juego.
 void DualCoreESP32 ::PauseTask(void *pvParameters)
 {
     while (true)
@@ -242,6 +252,8 @@ void DualCoreESP32 ::PauseTask(void *pvParameters)
         vTaskDelay(1 / portTICK_PERIOD_MS);
     }
 }
+
+// Tarea para cambiar entre música
 void DualCoreESP32 ::MusicTask(void *pvParameters)
 {
     MusicState newState;
@@ -255,33 +267,33 @@ void DualCoreESP32 ::MusicTask(void *pvParameters)
             switch (currentMusicState)
             {
             case MUSIC_INTRO:
-                Serial.println("Entro musica-intro");
+                // Serial.println("Entro musica-intro");
                 // if (!SD.exists("/intro.mp3")) {
                 //   Serial.println("Archivo intro.mp3 no encontrado");
                 // }
                 // audio.connecttoFS(SD,"/intro.mp3");
                 break;
             case MUSIC_MENU:
-                Serial.println("Entro Musica-Menu");
+                // Serial.println("Entro Musica-Menu");
                 // if (!SD.exists("/menu.mp3")) {
                 //   Serial.println("Archivo menu.mp3 no encontrado");
                 // }
                 // audio.connecttoFS(SD,"/menu.mp3");
                 break;
             case MUSIC_GAME:
-                Serial.println("Entro Musica-Game");
+                // Serial.println("Entro Musica-Game");
                 // if (!SD.exists("/game.mp3")) {
                 //   Serial.println("Archivo game.mp3 no encontrado");
                 // }
                 // audio.connecttoFS(SD,"/game.mp3");
                 break;
             case MUSIC_PAUSE:
-                Serial.println("Entro Musica-pausa");
+                // Serial.println("Entro Musica-pausa");
                 // audio.stopSong();
                 // isAudioStopped = true;
                 break;
             case MUSIC_ELEVATOR:
-                Serial.println("Musica-elevador");
+                // Serial.println("Musica-elevador");
                 // if (!SD.exists("/elevator.mp3")) {
                 //   Serial.println("Archivo elevator.mp3 no encontrado");
                 // }
@@ -337,7 +349,8 @@ void DualCoreESP32 ::GameLogicTask(void *pvParameters)
     }
 }
 
-/**** --- FUNCIONES GLOBALES --- ****/
+/**** --- INICIO DE FUNCIONES GLOBALES --- ****/
+
 //-- Función para cambiar el estado de la música (cambiar música)
 void ChangeMusic(MusicState newState)
 {
@@ -350,7 +363,8 @@ void ChangeGameState(GameState newState)
     xQueueSend(gameQueue, &newState, 0);
 }
 
-//-- Estado STATE_SCORES; Lee la el archivo JSON e imprime los 4 mejores Scores guardados
+//-- Estado STATE_SCORES;
+// Lee la el archivo JSON e imprime los 4 mejores Scores guardados
 void ReadMaxScores()
 {
     // Borrar pantalla
@@ -462,7 +476,7 @@ void IntroGame()
     vTaskDelay(2000 / portTICK_PERIOD_MS);
     lcd.clear();
 
-    // Titulo desplazándose
+    // Titulo del juego desplazándose
     lcd.print(title);
     for (int i = 0; i < 7; i++)
     {
@@ -471,6 +485,7 @@ void IntroGame()
         vTaskDelay(200 / portTICK_PERIOD_MS);
     }
 
+    // Nombre del juego
     lcd.setCursor(8, 1);
     lcd.print(nameGame);
     for (int i = 0; i < 7; i++)
@@ -482,6 +497,7 @@ void IntroGame()
 
     lcd.clear();
 
+    // Imprimir nombre de los autores
     const int numAutores = sizeof(autores) / sizeof(autores[0]);
     bool finalizadoCorrectamente = false;
 
@@ -505,6 +521,7 @@ void IntroGame()
         }
         vTaskDelay(1200 / portTICK_PERIOD_MS);
     }
+
     if (finalizadoCorrectamente)
     {
         Serial.println("Finalizó la ronda for de autores");
@@ -602,7 +619,7 @@ void MostrarMenuPausa(void)
     lcd.setCursor(1, 0);
     lcd.print("Reanudar");
     lcd.setCursor(1, 1);
-    lcd.print("Reiniciar");
+    lcd.print("Menu principal");
 
     while (digitalRead(BTN_ENTER))
     {
@@ -632,7 +649,6 @@ void MostrarMenuPausa(void)
     switch (optionToSelect)
     {
     case 0: // Se reinicia el juego
-        isPauseActivated = false;
         ChangeGameState(STATE_GAME);
     case 1: // Se envía menú principal
         isGameInProgress = false;
@@ -649,7 +665,7 @@ void mostrarMensaje(const char *linea1, const char *linea2)
     lcd.print(linea2);
 }
 
-bool nivel(int contador, int puntos)
+bool nivel(int contador, int puntosRequeridos, int puntajeEntrante)
 {
     static unsigned long lastUpdateTime = 0;
     const unsigned long UPDATE_INTERVAL = 100; // Actualizar cada 100ms
@@ -710,9 +726,9 @@ bool nivel(int contador, int puntos)
         }
 
         // El tiempo se acabó, verificar resultado
-        if (personaje.ImprimirPuntaje() >= puntos)
+        if (personaje.ImprimirPuntaje() - puntajeEntrante >= puntosRequeridos)
         {
-            mostrarMensaje("Nivel completado!", " ===> ");
+            mostrarMensaje("Nivel completado!", " =============> ");
             vTaskDelay(2000 / portTICK_PERIOD_MS); // Dar tiempo para leer el mensaje
             return true;
         }
@@ -728,22 +744,13 @@ bool nivel(int contador, int puntos)
 
 void EvaluarNivelFinal(int puntajeFinal)
 {
-    if (personaje.ImprimirPuntaje() >= puntajeFinal)
-    {
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Ganaste el juego!");
-        Serial.println("Juego completado con éxito");
-    }
-    else
-    {
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Lo siento...");
-        lcd.setCursor(0, 1);
-        lcd.print("Fin del juego");
-        Serial.println("Fin del juego");
-    }
+    lcd.clear();
+
+    lcd.setCursor(0, 0);
+    lcd.print(personaje.ImprimirPuntaje() >= puntajeFinal ? "Ganaste el juego!" : "Lo siento...");
+
+    lcd.setCursor(0, 1);
+    lcd.print(personaje.ImprimirPuntaje() >= puntajeFinal ? "Puntos: ", String(personaje.ImprimirPuntaje()) : "Fin del juego");
 
     // Cambiamos estado del juego a terminado
     isGameInProgress = false;
@@ -757,36 +764,49 @@ void JuegoCompleto()
 
     // Reiniciamos valores cada vez que se inicie el juego
     if (!isPauseActivated)
+    {
+        Serial.println("Entro en juego completo");
         personaje.ReiniciarValores();
+        checkPointNivel = 0;
+        checkPointPuntaje = 0;
+    }
 
-    // char* nombreElegido = nullptr;
-
-    // while(true){
-    //   ElegirNombre();
-    // }
-
-    // Serial.println(nombreElegido);
-    personaje.AsignarNombre(nom);
-    Serial.println(personaje.ImprimirNombre());
-
-    for (int i = 0; i < NIVELES; i++)
+    for (int i = checkPointNivel; i < NIVELES; i++)
     {
         lcd.clear();
-        lcd.print("Nivel ");
-        lcd.print(i + 1);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+        // Si no se inicializa desde una pausa, mostrar
+        if (!isPauseActivated)
+        {
+            lcd.print("Nivel ");
+            lcd.print(i + 1);
+            lcd.setCursor(0, 1);
+            lcd.print("Alcanza: ");
+            lcd.print(puntosRequeridos[i] + personaje.ImprimirPuntaje());
+            lcd.print(" pts.");
+
+            // Guardamos puntaje del personaje
+            checkPointPuntaje = personaje.ImprimirPuntaje();
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        }
+        else
+        {
+            personaje.puntaje = checkPointPuntaje;
+            isPauseActivated = false;
+        }
 
         inicioMilis = millis(); // Reiniciar el tiempo al inicio de cada nivel
 
         bool nivelCompletado = false;
         isGameInProgress = true;
+
         while (!nivelCompletado)
         {
             if (!isPauseActivated)
             {
-                Serial.println(isPauseActivated);
-                nivelCompletado = nivel(tiempos[i], puntosRequeridos[i]);
-                vTaskDelay(10 / portTICK_PERIOD_MS); // Reducir el delay para mayor responsividad
+                // Serial.println(isPauseActivated);
+                nivelCompletado = nivel(tiempos[i], puntosRequeridos[i], checkPointPuntaje);
+                vTaskDelay(10 / portTICK_PERIOD_MS);
             }
             else
             {
@@ -795,10 +815,13 @@ void JuegoCompleto()
         }
 
         // Si no alcanzó los puntos requeridos, terminar el juego
-        if (personaje.ImprimirPuntaje() < puntosRequeridos[i])
+        if (personaje.ImprimirPuntaje() - checkPointPuntaje < puntosRequeridos[i])
         {
             break;
         }
+
+        if (!isPauseActivated)
+            checkPointNivel++;
     }
 
     if (isPauseActivated)
