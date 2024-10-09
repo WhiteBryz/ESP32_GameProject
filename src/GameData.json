@@ -1,0 +1,31 @@
+{
+    "version": 1.0,
+    "authors": {
+        "names": [
+            "Flores Castro David Alonso",
+            "García Bravo Joél Adrían",
+            "Martínez Navarro Víctor",
+            "Puente Ruiz Eric Daniel"
+        ]
+    },
+    "editor": "wokwi",
+    "gameName": "Catch the Diamonds",
+    "bestScores": [
+        {
+            "name": "PRZ",
+            "score": 5
+        },
+        {
+            "name": "OLF",
+            "score": 4
+        },
+        {
+            "name": "DAF",
+            "score": 3
+        },
+        {
+            "name": "",
+            "score": 0
+        }
+    ]
+}

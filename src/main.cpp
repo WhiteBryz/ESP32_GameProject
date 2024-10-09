@@ -11,7 +11,7 @@ void setup(void)
   DCESP32.ConfigCores();
   Serial.println(F("Se han configurado correctamente los dos nucleos"));
   // Pasamos la primera bandera al Intro del juego
-  ChangeGameState(STATE_INTRO);
+  ChangeGameState(STATE_MENU);
 }
 
 void loop(void)

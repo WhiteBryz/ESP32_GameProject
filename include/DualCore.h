@@ -131,8 +131,12 @@ void EscribirNombre(void);
 void JuegoCompleto(void);
 void EvaluarFinal(void);
 bool ElegirNombre(void);
+bool esNuevoPuntajeMaximo(const JsonArray &bestScores, int puntajeObtenido);
+void actualizarPuntajes(JsonArray &bestScores, String nombreJugador, int puntajeObtenido);
+void evaluarPuntajeObtenido(int puntajeObtenido);
 
 /*--- CLASE MAESTRA --- */
+
 class DualCoreESP32
 {
 public:
@@ -169,9 +173,6 @@ void DualCoreESP32 ::ConfigCores(void)
     pinMode(CS_PIN, OUTPUT);
     digitalWrite(CS_PIN, HIGH);
 
-    // Initialize SPI bus for microSD Card
-    SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
-
     // --- INICIALIZACION DE MÓDULO SD ---
     Serial.print(F("Initializing SD card... "));
 
@@ -184,10 +185,8 @@ void DualCoreESP32 ::ConfigCores(void)
 
     Serial.println(F("Initialization done."));
 
-    Serial.println(F("Files in the card:"));
-    root = SD.open("/");
-    PrintDirectory(root, 0);
-    Serial.println("");
+    // Initialize SPI bus for microSD Card
+    SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
 
     // Initialize SPI bus for microSD Card
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
@@ -197,6 +196,11 @@ void DualCoreESP32 ::ConfigCores(void)
 
     // Set Volume
     // audio.setVolume(21);
+
+    Serial.println(F("Files in the card:"));
+    root = SD.open("/");
+    PrintDirectory(root, 0);
+    Serial.println("");
 
     /*~ Inicializar la pantalla LCD ~*/
     lcd.init();
@@ -264,39 +268,34 @@ void DualCoreESP32 ::MusicTask(void *pvParameters)
         {
             currentMusicState = newState;
 
+            // Detener la música actual
+            // audio.stopSong();
+            // vTaskDelay(10 / portTICK_PERIOD_MS);
+
             switch (currentMusicState)
             {
             case MUSIC_INTRO:
-                // Serial.println("Entro musica-intro");
-                // if (!SD.exists("/intro.mp3")) {
-                //   Serial.println("Archivo intro.mp3 no encontrado");
-                // }
+                // if (!SD.exists("/intro.mp3"))
+                // Serial.println("Archivo intro.mp3 no encontrado");
                 // audio.connecttoFS(SD,"/intro.mp3");
                 break;
             case MUSIC_MENU:
-                // Serial.println("Entro Musica-Menu");
-                // if (!SD.exists("/menu.mp3")) {
-                //   Serial.println("Archivo menu.mp3 no encontrado");
-                // }
+                // if (!SD.exists("/menu.mp3"))
+                // Serial.println("Archivo menu.mp3 no encontrado");
                 // audio.connecttoFS(SD,"/menu.mp3");
                 break;
             case MUSIC_GAME:
-                // Serial.println("Entro Musica-Game");
-                // if (!SD.exists("/game.mp3")) {
-                //   Serial.println("Archivo game.mp3 no encontrado");
-                // }
+                // if (!SD.exists("/game.mp3"))
+                // Serial.println("Archivo game.mp3 no encontrado");
                 // audio.connecttoFS(SD,"/game.mp3");
                 break;
             case MUSIC_PAUSE:
-                // Serial.println("Entro Musica-pausa");
                 // audio.stopSong();
                 // isAudioStopped = true;
                 break;
             case MUSIC_ELEVATOR:
-                // Serial.println("Musica-elevador");
-                // if (!SD.exists("/elevator.mp3")) {
-                //   Serial.println("Archivo elevator.mp3 no encontrado");
-                // }
+                // if (!SD.exists("/elevator.mp3"))
+                // Serial.println("Archivo elevator.mp3 no encontrado");
                 // audio.connecttoFS(SD,"/elevator.mp3");
                 break;
             default:
@@ -320,13 +319,13 @@ void DualCoreESP32 ::GameLogicTask(void *pvParameters)
             {
             // INTRODUCCIÓN
             case STATE_INTRO:
-                ChangeMusic(MUSIC_INTRO); // Reproducir música de Intro
-                IntroGame();              // Reproducir Intro del juego
+                ChangeMusic(MUSIC_INTRO);
+                IntroGame();
                 break;
             // MENU
             case STATE_MENU:
-                ChangeMusic(MUSIC_MENU); // Reproducir música del menú
-                MostrarMenuPrincipal();  // Reproducir menú (PENDIENTE)
+                ChangeMusic(MUSIC_MENU);
+                MostrarMenuPrincipal();
                 break;
             // JUEGO
             case STATE_GAME:
@@ -338,6 +337,7 @@ void DualCoreESP32 ::GameLogicTask(void *pvParameters)
                 ChangeMusic(MUSIC_ELEVATOR);
                 ReadMaxScores();
                 break;
+            // PAUSA
             case STATE_PAUSE:
                 ChangeMusic(MUSIC_PAUSE);
                 MostrarMenuPausa();
@@ -365,7 +365,7 @@ void ChangeGameState(GameState newState)
 
 //-- Estado STATE_SCORES;
 // Lee la el archivo JSON e imprime los 4 mejores Scores guardados
-void ReadMaxScores()
+void ReadMaxScores(void)
 {
     // Borrar pantalla
     lcd.clear();
@@ -373,11 +373,11 @@ void ReadMaxScores()
     File JsonFile = SD.open("/GameData.json");
     if (!JsonFile)
     {
-        Serial.println("Error opening Scores");
+        Serial.println("Error opening GameData.json");
         return;
     }
 
-    // JSON Doc con tamaño predefinido
+    // JSON Doc
     JsonDocument doc;
     deserializeJson(doc, JsonFile);
     JsonArray bestScores = doc["bestScores"].as<JsonArray>();
@@ -524,7 +524,7 @@ void IntroGame()
 
     if (finalizadoCorrectamente)
     {
-        Serial.println("Finalizó la ronda for de autores");
+        Serial.println("Finalizó la ronda FOR de autores");
         ChangeGameState(STATE_MENU);
     }
     else
@@ -744,13 +744,24 @@ bool nivel(int contador, int puntosRequeridos, int puntajeEntrante)
 
 void EvaluarNivelFinal(int puntajeFinal)
 {
-    lcd.clear();
+    if (personaje.ImprimirPuntaje() >= puntajeFinal)
+    {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Ganaste el juego!");
+        Serial.println("Juego completado con éxito");
 
-    lcd.setCursor(0, 0);
-    lcd.print(personaje.ImprimirPuntaje() >= puntajeFinal ? "Ganaste el juego!" : "Lo siento...");
-
-    lcd.setCursor(0, 1);
-    lcd.print(personaje.ImprimirPuntaje() >= puntajeFinal ? "Puntos: ", String(personaje.ImprimirPuntaje()) : "Fin del juego");
+        evaluarPuntajeObtenido(personaje.ImprimirPuntaje());
+    }
+    else
+    {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Lo siento...");
+        lcd.setCursor(0, 1);
+        lcd.print("Fin del juego");
+        Serial.println("Fin del juego");
+    }
 
     // Cambiamos estado del juego a terminado
     isGameInProgress = false;
@@ -886,6 +897,108 @@ bool ElegirNombre(void)
         Serial.println("Entro");
         return false;
     }
+}
+
+// Evalua el puntaje obtenido de la partida y si es un nuevo máximo lo registramos
+void evaluarPuntajeObtenido(int puntajeObtenido)
+{
+    File JsonFile = SD.open("/GameData.json");
+    if (!JsonFile)
+    {
+        Serial.println(F("Error opening GameData.json"));
+        return;
+    }
+
+    JsonDocument doc;
+    deserializeJson(doc, JsonFile);
+    JsonArray bestScores = doc["bestScores"].as<JsonArray>();
+
+    if (esNuevoPuntajeMaximo(bestScores, puntajeObtenido))
+    {
+        String nombreJugador = "DAF";
+        actualizarPuntajes(bestScores, nombreJugador, puntajeObtenido);
+    }
+    else
+    {
+        Serial.println("No fue puntaje máximo");
+    }
+}
+
+// Evalúa si el puntaje obtenido es un nuevo máximo
+bool esNuevoPuntajeMaximo(const JsonArray &bestScores, int puntajeObtenido)
+{
+    if (bestScores.isNull() || bestScores.size() == 0)
+    {
+        Serial.println("Primer nuevo puntaje máximo.");
+        return true;
+    }
+
+    // Obtenemos puntaje maximo
+    int scoreValue = bestScores[0]["score"];
+
+    return puntajeObtenido >= scoreValue;
+}
+
+// Desplazar puntajes máximos viejos y agregar el nuevo puntaje máximo
+void actualizarPuntajes(JsonArray &bestScores, String nombreJugador, int puntajeObtenido)
+{
+
+    // Ejemplo de cómo podrías usar el array modificable
+    if (puntajeObtenido > bestScores[0]["score"])
+    {
+        // Desplazar todos los puntajes una posición
+        for (int i = bestScores.size() - 1; i > 0; i--)
+        {
+            bestScores[i]["score"] = bestScores[i - 1]["score"];
+            bestScores[i]["name"] = bestScores[i - 1]["name"];
+        }
+        // Insertar el nuevo puntaje máximo
+        bestScores[0]["score"] = puntajeObtenido;
+        bestScores[0]["name"] = nombreJugador;
+    }
+    else
+    {
+        return;
+    }
+
+    // Eliminar el archivo existente
+    if (SD.exists("/GameData.json"))
+        SD.remove("/GameData.json");
+
+    // Ahora escribimos el JSON actualizado al archivo
+    File jsonFile = SD.open("/GameData.json", FILE_WRITE);
+    if (!jsonFile)
+    {
+        Serial.println(F("Error al abrir el archivo para escritura"));
+        return;
+    }
+
+    // Serializar documento nuevo
+    JsonDocument doc;
+    // Versión
+    doc["version"] = 1.0;
+
+    // Authors
+    JsonObject authors = doc.createNestedObject("authors");
+    JsonArray authorNames = authors.createNestedArray("names");
+    authorNames.add("Flores Castro David Alonso");
+    authorNames.add("García Bravo Joél Adrían");
+    authorNames.add("Martínez Navarro Víctor");
+    authorNames.add("Puente Ruiz Eric Daniel");
+
+    // Editor
+    doc["editor"] = "wokwi";
+    doc["gameName"] = "Catch the Diamonds";
+    doc["bestScores"] = bestScores;
+
+    if (serializeJson(doc, jsonFile) == 0)
+    {
+        Serial.println(F("Error al escribir en el archivo"));
+        jsonFile.close();
+        return;
+    }
+
+    jsonFile.close();
 }
 
 #endif
